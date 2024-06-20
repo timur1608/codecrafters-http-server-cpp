@@ -10,10 +10,10 @@
 
 std::string getUrl(char *buffer) {
   std::string result;
-  char* urlp = strtok(buffer, "/");
+  char *urlp = strtok(buffer, "/");
   urlp = strtok(NULL, "/");
-  while (*urlp != ' '){
-    result += *urlp; 
+  while (*urlp != ' ') {
+    result += *urlp;
     urlp++;
   }
   return result;
@@ -80,11 +80,15 @@ int main(int argc, char **argv) {
   auto size = read(client_fd, buffer, 512);
   // std::cout << size << std::endl;
 
-  std::string OK("HTTP/1.1 200 OK\r\n\r\n");
+  std::string OK("HTTP/1.1 200 OK\r\n");
   std::string ERROR("HTTP/1.1 404 Not Found\r\n\r\n");
   std::string url(getUrl(buffer));
-  std::cout << url << std::endl;
-  if (url.empty()) {
+  if (url.starts_with("echo")) {
+    OK += "Content-Type: text/plain\r\nContent-Length: ";
+    OK += std::to_string(url.length() - 5) + "\r\n\r\n" + url.substr(5, url.length() - 1);
+    send(client_fd, OK.c_str(), OK.length(), 0);
+  }
+  else if (url.empty()) {
     send(client_fd, OK.c_str(), 23, 0);
   } else {
     send(client_fd, ERROR.c_str(), 30, 0);
