@@ -76,19 +76,32 @@ int main(int argc, char **argv) {
   // unsigned int SenderAddrSize = sizeof(SenderAddr);
 
   // auto size = recv(server_fd, &buffer[0], 512, 0);
-  bzero(buffer, 512);
   auto size = read(client_fd, buffer, 512);
   // std::cout << size << std::endl;
 
   std::string OK("HTTP/1.1 200 OK\r\n");
   std::string ERROR("HTTP/1.1 404 Not Found\r\n\r\n");
+  std::string request(buffer);
   std::string url(getUrl(buffer));
   if (url.starts_with("echo")) {
     OK += "Content-Type: text/plain\r\nContent-Length: ";
-    OK += std::to_string(url.length() - 5) + "\r\n\r\n" + url.substr(5, url.length() - 1);
+    OK += std::to_string(url.length() - 5) + "\r\n\r\n" +
+          url.substr(5, url.length() - 1);
     send(client_fd, OK.c_str(), OK.length(), 0);
-  }
-  else if (url.empty()) {
+  } else if (url.starts_with("user-agent")) {
+    auto userAgentPos = request.find("User-Agent: ");
+    userAgentPos += 12;
+    std::string userAgentValue;
+    std::cout << request;
+    while (request[userAgentPos] != '\r')
+    {
+      userAgentValue += request[userAgentPos];
+      userAgentPos++;
+    } 
+    OK += "Content-Type: text/plain\r\nContent-Length: ";
+    OK += std::to_string(userAgentValue.length()) + "\r\n\r\n" + userAgentValue;
+    send(client_fd, OK.c_str(), OK.length(), 0);
+  } else if (url.empty()) {
     OK += "\r\n";
     send(client_fd, OK.c_str(), 23, 0);
   } else {
