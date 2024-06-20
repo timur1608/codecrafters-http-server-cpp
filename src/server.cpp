@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
   std::string ERROR("HTTP/1.1 404 Not Found\r\n\r\n");
   std::string url(getUrl(buffer));
   std::cout << url << std::endl;
-  if (url == "index.html") {
+  if (url.empty()) {
     send(client_fd, OK.c_str(), 23, 0);
   } else {
     send(client_fd, ERROR.c_str(), 30, 0);
