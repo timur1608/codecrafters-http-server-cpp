@@ -89,6 +89,7 @@ int main(int argc, char **argv) {
     send(client_fd, OK.c_str(), OK.length(), 0);
   }
   else if (url.empty()) {
+    OK += "\r\n";
     send(client_fd, OK.c_str(), 23, 0);
   } else {
     send(client_fd, ERROR.c_str(), 30, 0);
