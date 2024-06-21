@@ -6,7 +6,9 @@
 #include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <thread>
 #include <unistd.h>
+#include <vector>
 
 std::string getUrl(char *buffer) {
   std::string result;
@@ -17,6 +19,44 @@ std::string getUrl(char *buffer) {
     urlp++;
   }
   return result;
+}
+
+void workWithClient(int client_fd) {
+  char buffer[512];
+  // sockaddr_in SenderAddr;
+  // unsigned int SenderAddrSize = sizeof(SenderAddr);
+
+  // auto size = recv(server_fd, &buffer[0], 512, 0);
+  auto size = read(client_fd, buffer, 512);
+  // std::cout << size << std::endl;
+
+  std::string OK("HTTP/1.1 200 OK\r\n");
+  std::string ERROR("HTTP/1.1 404 Not Found\r\n\r\n");
+  std::string request(buffer);
+  std::string url(getUrl(buffer));
+  if (url.starts_with("echo")) {
+    OK += "Content-Type: text/plain\r\nContent-Length: ";
+    OK += std::to_string(url.length() - 5) + "\r\n\r\n" +
+          url.substr(5, url.length() - 1);
+    send(client_fd, OK.c_str(), OK.length(), 0);
+  } else if (url.starts_with("user-agent")) {
+    auto userAgentPos = request.find("User-Agent: ");
+    userAgentPos += 12;
+    std::string userAgentValue;
+    std::cout << request;
+    while (request[userAgentPos] != '\r') {
+      userAgentValue += request[userAgentPos];
+      userAgentPos++;
+    }
+    OK += "Content-Type: text/plain\r\nContent-Length: ";
+    OK += std::to_string(userAgentValue.length()) + "\r\n\r\n" + userAgentValue;
+    send(client_fd, OK.c_str(), OK.length(), 0);
+  } else if (url.empty()) {
+    OK += "\r\n";
+    send(client_fd, OK.c_str(), 23, 0);
+  } else {
+    send(client_fd, ERROR.c_str(), 30, 0);
+  }
 }
 
 int main(int argc, char **argv) {
@@ -64,50 +104,21 @@ int main(int argc, char **argv) {
 
   struct sockaddr_in client_addr;
   int client_addr_len = sizeof(client_addr);
-
+  std::vector<std::thread> threads(std::thread::hardware_concurrency());
   std::cout << "Waiting for a client to connect...\n";
 
-  int client_fd = accept(server_fd, (struct sockaddr *)&client_addr,
-                         (socklen_t *)&client_addr_len);
-  std::cout << "Client connected\n";
-
-  char buffer[512];
-  // sockaddr_in SenderAddr;
-  // unsigned int SenderAddrSize = sizeof(SenderAddr);
-
-  // auto size = recv(server_fd, &buffer[0], 512, 0);
-  auto size = read(client_fd, buffer, 512);
-  // std::cout << size << std::endl;
-
-  std::string OK("HTTP/1.1 200 OK\r\n");
-  std::string ERROR("HTTP/1.1 404 Not Found\r\n\r\n");
-  std::string request(buffer);
-  std::string url(getUrl(buffer));
-  if (url.starts_with("echo")) {
-    OK += "Content-Type: text/plain\r\nContent-Length: ";
-    OK += std::to_string(url.length() - 5) + "\r\n\r\n" +
-          url.substr(5, url.length() - 1);
-    send(client_fd, OK.c_str(), OK.length(), 0);
-  } else if (url.starts_with("user-agent")) {
-    auto userAgentPos = request.find("User-Agent: ");
-    userAgentPos += 12;
-    std::string userAgentValue;
-    std::cout << request;
-    while (request[userAgentPos] != '\r')
-    {
-      userAgentValue += request[userAgentPos];
-      userAgentPos++;
-    } 
-    OK += "Content-Type: text/plain\r\nContent-Length: ";
-    OK += std::to_string(userAgentValue.length()) + "\r\n\r\n" + userAgentValue;
-    send(client_fd, OK.c_str(), OK.length(), 0);
-  } else if (url.empty()) {
-    OK += "\r\n";
-    send(client_fd, OK.c_str(), 23, 0);
-  } else {
-    send(client_fd, ERROR.c_str(), 30, 0);
+  while (true) {
+    int client_fd = accept(server_fd, (struct sockaddr *)&client_addr,
+                           (socklen_t *)&client_addr_len);
+    std::cout << "Client connected\n";
+    threads.emplace_back(std::thread(workWithClient, client_fd));
+  }
+  for (auto& thr : threads)
+  {
+    if (thr.joinable()){
+      thr.join();
+    }
   }
   close(server_fd);
-
   return 0;
 }
