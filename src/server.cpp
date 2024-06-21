@@ -1,14 +1,18 @@
 #include <arpa/inet.h>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <netdb.h>
+#include <sstream>
 #include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <thread>
 #include <unistd.h>
 #include <vector>
+
+std::string path;
 
 std::string getUrl(char *buffer) {
   std::string result;
@@ -21,14 +25,17 @@ std::string getUrl(char *buffer) {
   return result;
 }
 
+std::string getTextFromFile(std::string filename) {
+  std::ifstream file(path + filename, std::ios::in);
+  std::stringstream filebuf;
+  filebuf << file.rdbuf();
+  return filebuf.str();
+}
+
 void workWithClient(int client_fd) {
   char buffer[512];
-  // sockaddr_in SenderAddr;
-  // unsigned int SenderAddrSize = sizeof(SenderAddr);
 
-  // auto size = recv(server_fd, &buffer[0], 512, 0);
   auto size = read(client_fd, buffer, 512);
-  // std::cout << size << std::endl;
 
   std::string OK("HTTP/1.1 200 OK\r\n");
   std::string ERROR("HTTP/1.1 404 Not Found\r\n\r\n");
@@ -51,6 +58,20 @@ void workWithClient(int client_fd) {
     OK += "Content-Type: text/plain\r\nContent-Length: ";
     OK += std::to_string(userAgentValue.length()) + "\r\n\r\n" + userAgentValue;
     send(client_fd, OK.c_str(), OK.length(), 0);
+
+  } else if (url.starts_with("files")) {
+    if (url.length() == 6) {
+      send(client_fd, ERROR.c_str(), 30, 0);
+    } else {
+      std::string filebuf = getTextFromFile(url.substr(6, url.length() - 1));
+      if (filebuf.empty()) {
+        send(client_fd, ERROR.c_str(), 30, 0);
+      } else {
+        OK += "Content-Type: application/octet-stream\r\nContent-Length: ";
+        OK += std::to_string(filebuf.length()) + "\r\n\r\n" + filebuf;
+        send(client_fd, OK.c_str(), OK.length(), 0);
+      }
+    }
   } else if (url.empty()) {
     OK += "\r\n";
     send(client_fd, OK.c_str(), 23, 0);
@@ -63,6 +84,9 @@ int main(int argc, char **argv) {
   // Flush after every std::cout / std::cerr
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
+  if (argc > 2 && strcmp(argv[1], "--directory") == 0){
+    path += argv[2];
+  }
 
   // You can use print statements as follows for debugging, they'll be visible
   // when running tests.
@@ -113,9 +137,8 @@ int main(int argc, char **argv) {
     std::cout << "Client connected\n";
     threads.emplace_back(std::thread(workWithClient, client_fd));
   }
-  for (auto& thr : threads)
-  {
-    if (thr.joinable()){
+  for (auto &thr : threads) {
+    if (thr.joinable()) {
       thr.join();
     }
   }
