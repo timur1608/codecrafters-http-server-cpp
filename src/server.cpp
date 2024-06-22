@@ -32,51 +32,74 @@ std::string getTextFromFile(std::string filename) {
   return filebuf.str();
 }
 
-void workWithClient(int client_fd) {
-  char buffer[512];
+void writeTextToFile(std::string filename, const std::string &text) {
+  std::ofstream file(path + filename, std::ios::out);
+  file.write(text.c_str(), text.length());
+  // if (file){
+  //   std::cerr << path + filename;
+  // }
+}
+std::string getBodyText(const std::string& request) {
+  auto bodyPos = request.find_last_of("\r\n");
+  //std::cerr << request.substr(bodyPos + 1, request.length() - 1);
+  return request.substr(bodyPos + 1, request.length() - 1);
+}
 
-  auto size = read(client_fd, buffer, 512);
+void workWithClient(int client_fd) {
+  char buffer[1024];
+
+  auto size = read(client_fd, buffer, 1024);
 
   std::string OK("HTTP/1.1 200 OK\r\n");
   std::string ERROR("HTTP/1.1 404 Not Found\r\n\r\n");
+
   std::string request(buffer);
   std::string url(getUrl(buffer));
-  if (url.starts_with("echo")) {
-    OK += "Content-Type: text/plain\r\nContent-Length: ";
-    OK += std::to_string(url.length() - 5) + "\r\n\r\n" +
-          url.substr(5, url.length() - 1);
-    send(client_fd, OK.c_str(), OK.length(), 0);
-  } else if (url.starts_with("user-agent")) {
-    auto userAgentPos = request.find("User-Agent: ");
-    userAgentPos += 12;
-    std::string userAgentValue;
-    std::cout << request;
-    while (request[userAgentPos] != '\r') {
-      userAgentValue += request[userAgentPos];
-      userAgentPos++;
-    }
-    OK += "Content-Type: text/plain\r\nContent-Length: ";
-    OK += std::to_string(userAgentValue.length()) + "\r\n\r\n" + userAgentValue;
-    send(client_fd, OK.c_str(), OK.length(), 0);
+  if (request.starts_with("GET")) {
+    if (url.starts_with("echo")) {
+      OK += "Content-Type: text/plain\r\nContent-Length: ";
+      OK += std::to_string(url.length() - 5) + "\r\n\r\n" +
+            url.substr(5, url.length() - 1);
+      send(client_fd, OK.c_str(), OK.length(), 0);
+    } else if (url.starts_with("user-agent")) {
+      auto userAgentPos = request.find("User-Agent: ");
+      userAgentPos += 12;
+      std::string userAgentValue;
+      std::cout << request;
+      while (request[userAgentPos] != '\r') {
+        userAgentValue += request[userAgentPos];
+        userAgentPos++;
+      }
+      OK += "Content-Type: text/plain\r\nContent-Length: ";
+      OK +=
+          std::to_string(userAgentValue.length()) + "\r\n\r\n" + userAgentValue;
+      send(client_fd, OK.c_str(), OK.length(), 0);
 
-  } else if (url.starts_with("files")) {
-    if (url.length() == 6) {
-      send(client_fd, ERROR.c_str(), 30, 0);
-    } else {
-      std::string filebuf = getTextFromFile(url.substr(6, url.length() - 1));
-      if (filebuf.empty()) {
+    } else if (url.starts_with("files")) {
+      if (url.length() == 6) {
         send(client_fd, ERROR.c_str(), 30, 0);
       } else {
-        OK += "Content-Type: application/octet-stream\r\nContent-Length: ";
-        OK += std::to_string(filebuf.length()) + "\r\n\r\n" + filebuf;
-        send(client_fd, OK.c_str(), OK.length(), 0);
+        std::string filebuf = getTextFromFile(url.substr(6, url.length() - 1));
+        if (filebuf.empty()) {
+          send(client_fd, ERROR.c_str(), 30, 0);
+        } else {
+          OK += "Content-Type: application/octet-stream\r\nContent-Length: ";
+          OK += std::to_string(filebuf.length()) + "\r\n\r\n" + filebuf;
+          send(client_fd, OK.c_str(), OK.length(), 0);
+        }
       }
+    } else if (url.empty()) {
+      OK += "\r\n";
+      send(client_fd, OK.c_str(), 23, 0);
+    } else {
+      send(client_fd, ERROR.c_str(), 30, 0);
     }
-  } else if (url.empty()) {
-    OK += "\r\n";
-    send(client_fd, OK.c_str(), 23, 0);
-  } else {
-    send(client_fd, ERROR.c_str(), 30, 0);
+  } else if (request.starts_with("POST")) {
+    if (url.starts_with("files")) {
+      std::string filename = url.substr(6, url.length() - 1);
+      writeTextToFile(filename, getBodyText(request));
+      send(client_fd, "HTTP/1.1 201 Created\r\n\r\n", 28, 0);
+    }
   }
 }
 
@@ -84,7 +107,7 @@ int main(int argc, char **argv) {
   // Flush after every std::cout / std::cerr
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
-  if (argc > 2 && strcmp(argv[1], "--directory") == 0){
+  if (argc > 2 && strcmp(argv[1], "--directory") == 0) {
     path += argv[2];
   }
 
@@ -125,11 +148,12 @@ int main(int argc, char **argv) {
     std::cerr << "listen failed\n";
     return 1;
   }
+  std::cout << "Waiting for a client to connect...\n";
 
   struct sockaddr_in client_addr;
   int client_addr_len = sizeof(client_addr);
+
   std::vector<std::thread> threads(std::thread::hardware_concurrency());
-  std::cout << "Waiting for a client to connect...\n";
 
   while (true) {
     int client_fd = accept(server_fd, (struct sockaddr *)&client_addr,
